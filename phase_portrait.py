@@ -9,6 +9,7 @@ class PlotConfig(TypedDict, total=False):
     number_of_arrow: int
     arrow_span: int
     arrow_color: str
+    arrow_shift: int | List[int]
 
 
 class PhasePortrait:
@@ -27,6 +28,7 @@ class PhasePortrait:
             "number_of_arrow": 1,
             "arrow_span": 10,
             "arrow_color": "black",
+            "arrow_shift": [5],
         }
         plt.figure(figsize=figsize)
 
@@ -37,6 +39,7 @@ class PhasePortrait:
         number_of_arrow=1,
         arrow_span=10,
         arrow_color="black",
+        arrow_shift=[5],
     ):
         """
         Plot the solution trajectory with optional arrows to indicate direction.
@@ -48,17 +51,21 @@ class PhasePortrait:
             arrow_span: Interval between arrows along the trajectory.
             arrow_color: Color of the arrows.
         """
+
+        if not isinstance(arrow_shift, list):
+            arrow_shift = [arrow_shift] * number_of_arrow
         x, y = solution
         plt.plot(x, y, color=color)
         idx = arrow_span
-        for _ in range(number_of_arrow):
+
+        for i in range(number_of_arrow):
             if idx >= len(x):
                 continue
             plt.quiver(
                 x[idx],
                 y[idx],
-                x[idx + 5] - x[idx],
-                y[idx + 5] - y[idx],
+                x[idx + arrow_shift[i]] - x[idx],
+                y[idx + arrow_shift[i]] - y[idx],
                 color=arrow_color,
                 angles="xy",
                 scale_units="xy",
@@ -118,6 +125,7 @@ class PhasePortrait:
                 number_of_arrow=cfg["number_of_arrow"],
                 arrow_span=cfg["arrow_span"],
                 arrow_color=cfg["arrow_color"],
+                arrow_shift=cfg["arrow_shift"],
             )
 
     def show(

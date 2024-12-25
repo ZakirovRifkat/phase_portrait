@@ -25,7 +25,8 @@ config = {
     "color": "black",
     "number_of_arrow": 2,
     "arrow_span": 20,
-    "arrow_color": "red",
+    "arrow_color": "black",
+    "arrow_shift": 5,
 }
 
 
