@@ -1,45 +1,61 @@
-from typing import List, Optional, TypedDict, Union
-import matplotlib.pyplot as plt
 import os
+from typing import List, Optional, Union, TypedDict
+import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
 
+DEFAULT_CONFIG = {
+    "arrow_span": 20,
+    "number_of_arrow": 1,
+}
+
+
 class PlotConfig(TypedDict, total=False):
-    color: str
-    number_of_arrow: int
     arrow_span: int
-    arrow_color: str
-    arrow_shift: int | List[int]
+    number_of_arrow: int
+
+
+class InitialCondition:
+    def __init__(
+        self,
+        point,
+        t_eval=None,
+        rtol=1e-6,
+        atol=1e-10,
+        color="black",
+        arrow_color="black",
+        config: Optional[Union[PlotConfig, List[PlotConfig]]] = None,
+    ):
+        self.point = point
+        self.t_eval = t_eval
+        self.rtol = rtol
+        self.atol = atol
+        self.color = color
+        self.arrow_color = arrow_color
+        if config is None:
+            config = DEFAULT_CONFIG
+        self.config = config
 
 
 class PhasePortrait:
-    def __init__(self, system, figsize=(8, 6)):
+    def __init__(self, system):
         """
         Initialize the PhasePortrait object.
 
         Args:
             system: Callable that describes the system of differential equations.
-            figsize: Tuple specifying the figure size for matplotlib.
         """
         self.system = system
-        self._default_images_dir = "images"
-        self._default_config = {
-            "color": "black",
-            "number_of_arrow": 1,
-            "arrow_span": 10,
-            "arrow_color": "black",
-            "arrow_shift": [5],
-        }
-        plt.figure(figsize=figsize)
+        self.fig, self.ax = plt.subplots()
 
     def plot_trajectory(
         self,
         solution,
         color="black",
-        number_of_arrow=1,
-        arrow_span=10,
+        arrow_span=20,
         arrow_color="black",
-        arrow_shift=[5],
+        number_of_arrow=1,
+        t_eval=None,
     ):
         """
         Plot the solution trajectory with optional arrows to indicate direction.
@@ -47,51 +63,57 @@ class PhasePortrait:
         Args:
             solution: Array of x and y solutions from solve_ivp.
             color: Line color of the trajectory.
-            number_of_arrow: Number of arrows to indicate direction.
             arrow_span: Interval between arrows along the trajectory.
             arrow_color: Color of the arrows.
+            number_of_arrow: Number of arrows
         """
+        is_reverse = False
+        if not t_eval is None and t_eval[0] > t_eval[-1]:
+            is_reverse = True
 
-        if not isinstance(arrow_shift, list):
-            arrow_shift = [arrow_shift] * number_of_arrow
         x, y = solution
-        plt.plot(x, y, color=color)
-        idx = arrow_span
+        self.ax.plot(x, y, color=color)
 
-        for i in range(number_of_arrow):
+        idx = arrow_span
+        for _ in range(number_of_arrow):
+            xy = (x[idx], y[idx])
+            xytext = (x[idx - 2], y[idx - 2])
+
+            if is_reverse:
+                temp = xy
+                xy = xytext
+                xytext = temp
+
             if idx >= len(x):
                 continue
-            plt.quiver(
-                x[idx],
-                y[idx],
-                x[idx + arrow_shift[i]] - x[idx],
-                y[idx + arrow_shift[i]] - y[idx],
-                color=arrow_color,
-                angles="xy",
-                scale_units="xy",
-                scale=1,
-                width=0.008,
-                zorder=2,
+            self.ax.annotate(
+                "",
+                xy=xy,
+                xytext=xytext,
+                arrowprops={
+                    "arrowstyle": "-|>",
+                    "color": arrow_color,
+                    "lw": 1.2,
+                    "mutation_scale": 20,
+                },
             )
             idx += arrow_span
 
-    def plot_state_equilibrium(self, x, y, color="blue"):
+    def plot_equilibrium(self, coordinates, is_stable=False):
         """
         Plot equilibrium states as scatter points.
 
         Args:
-            x: X-coordinate of the equilibrium state.
-            y: Y-coordinate of the equilibrium state.
-            color: Color of the equilibrium points.
+            coordinates: Tuple of coordinates (x, y).
+            is_stable: Whether the equilibrium point is stable.
         """
-        plt.scatter(x, y, s=50, c=color, zorder=3)
+        color = "green" if is_stable else "red"
+        self.ax.scatter(coordinates[0], coordinates[1], color=color, s=50, zorder=2)
 
     def plot_trajectories(
         self,
-        initial_conditions_list,
-        t_span,
-        t_eval,
-        config: Optional[Union[PlotConfig, List[PlotConfig]]] = None,
+        initial_conditions_list: List[InitialCondition],
+        t_eval=None,
     ):
         """
         Visualize the trajectories for a list of initial conditions.
@@ -99,62 +121,59 @@ class PhasePortrait:
         Args:
             initial_conditions_list: List of initial conditions [[x0, v0], ...].
             t_span: Tuple (t_start, t_end) specifying the time interval for integration.
-            t_eval: Array of time points where the solution is evaluated.
-            config: Configuration for plotting trajectories. Can be:
-                - A single dictionary applied to all trajectories.
-                - A list of dictionaries, one for each trajectory.
+            t_eval: List of time evaluation points for each trajectory.
         """
-        if config is None:  # Use default configuration if not provided
-            config = self._default_config
+        for initial_condition in initial_conditions_list:
 
-        if isinstance(config, dict):
-            config = [config] * len(initial_conditions_list)
-        elif isinstance(config, list):
-            if len(config) != len(initial_conditions_list):
-                raise ValueError(
-                    "The length of the list of configurations must match the number of initial conditions."
-                )
+            if t_eval is None and initial_condition.t_eval is None:
+                raise ValueError("Need to provide t_eval value")
 
-        for initial_conditions, cfg in zip(initial_conditions_list, config):
+            if initial_condition.t_eval is None:
+                initial_condition.t_eval = t_eval
+
             sol = solve_ivp(
-                self.system, t_span, initial_conditions, t_eval=t_eval, method="RK45"
+                self.system,
+                y0=initial_condition.point,
+                t_span=[initial_condition.t_eval[0], initial_condition.t_eval[-1]],
+                t_eval=initial_condition.t_eval,
+                rtol=initial_condition.rtol,
+                atol=initial_condition.atol,
+                method="RK45",
             )
+
             self.plot_trajectory(
                 solution=[sol.y[0], sol.y[1]],
-                color=cfg["color"],
-                number_of_arrow=cfg["number_of_arrow"],
-                arrow_span=cfg["arrow_span"],
-                arrow_color=cfg["arrow_color"],
-                arrow_shift=cfg["arrow_shift"],
+                color=initial_condition.color,
+                arrow_span=initial_condition.config["arrow_span"],
+                arrow_color=initial_condition.arrow_color,
+                number_of_arrow=initial_condition.config["number_of_arrow"],
+                t_eval=initial_condition.t_eval,
             )
 
-    def show(
-        self,
-        xlim=None,
-        ylim=None,
-        xlabel="x",
-        ylabel="y",
-        title="Phase portrait",
-        legend="",
-    ):
+    def show(self, xlabel="x", ylabel="y", title="Phase Portrait", axis=None):
         """
         Display the plotted phase portrait.
 
         Args:
-            xlim: Tuple (x_min, x_max) for x-axis limits.
-            ylim: Tuple (y_min, y_max) for y-axis limits.
             xlabel: Label for the x-axis.
             ylabel: Label for the y-axis.
             title: Title of the plot.
-            legend: Legend for the plot.
+            axis: Iterable object of (x_min, x_max, y_min, y_max) to set axis limits.
         """
-        plt.xlim(xlim)
-        plt.ylim(ylim)
-        plt.xlabel(xlabel)
-        plt.ylabel(ylabel)
-        plt.grid()
-        plt.legend(legend)
-        plt.title(title)
+        self.ax.set_title(title)
+
+        self.ax.set_xlabel(xlabel, fontsize=16)
+        self.ax.set_ylabel(ylabel, fontsize=16, rotation=0)
+        self.ax.tick_params(labelsize=14)
+        self.ax.tick_params(labelsize=14)
+
+        self.ax.grid(True)
+
+        if axis is not None:
+            self.ax.set_xlim([axis[0], axis[1]])
+            self.ax.set_ylim([axis[2], axis[3]])
+
+        self.ax.legend()
         plt.show()
 
     def save(self, path=None):
@@ -164,13 +183,17 @@ class PhasePortrait:
         Args:
             path: Directory where the plot will be saved. Defaults to "images".
         """
-        idx = 0
         if path is None:
-            path = self._default_images_dir
-        if os.path.exists(path):
-            idx = len(os.listdir(path)) + 1  # Increment file index
-        else:
-            os.mkdir(path)
-        image_path = os.path.join(path, f"plot_{idx}.pdf")
-        plt.savefig(image_path, format="pdf", bbox_inches="tight")
+            path = "images"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        file_count = len(
+            [
+                name
+                for name in os.listdir(path)
+                if name.startswith("plot_") and name.endswith(".pdf")
+            ]
+        )
+        image_path = os.path.join(path, f"plot_{file_count + 1}.pdf")
+        self.fig.savefig(image_path, dpi=300)
         print(f"Figure saved to {image_path}")
